@@ -1,0 +1,272 @@
+#!/usr/bin/env python
+
+############################################################## 
+# 
+# Author:               John Vant 
+# Email:              jvant@asu.edu 
+# Affiliation:   ASU Biodesign Institute 
+# Date Created:          200303
+# 
+############################################################## 
+# 
+# Usage: 
+# 
+############################################################## 
+# 
+# Notes: 
+# 
+############################################################## 
+
+script = '''
+structure               my.psf
+coordinates             my.pdb
+
+set temp                303.15;
+
+#inputname
+%s
+#outputname
+%s
+
+outputName              $outputname;        # base name for output from this run
+firsttimestep           0;                  # last step of previous run
+
+restartfreq             500;                # 500 steps = every 1ps
+dcdfreq                 5000;
+dcdUnitCell             yes;                # the file will contain unit cell info in the style of
+xstFreq                 5000;               # XSTFreq: control how often the extended systen configuration
+outputEnergies          125;                # 125 steps = every 0.25ps
+outputTiming            1000;               # The number of timesteps between each timing output shows
+
+# Force-Field Parameters
+paraTypeCharmm          on;                 # We're using charmm type parameter file(s)
+parameters          toppar/par_all36m_prot.prm
+parameters          toppar/par_all36_na.prm
+parameters          toppar/par_all36_carb.prm
+parameters          toppar/par_all36_lipid.prm
+parameters          toppar/par_all36_cgenff.prm
+parameters          toppar/toppar_water_ions_namd.str
+parameters          toppar/AMP.par
+parameters          toppar/toppar_dum_noble_gases.str
+parameters          toppar/toppar_all36_prot_d_aminoacids.str
+parameters          toppar/toppar_all36_prot_fluoro_alkanes.str
+parameters          toppar/toppar_all36_prot_heme.str
+parameters          toppar/toppar_all36_prot_na_combined.str
+parameters          toppar/toppar_all36_prot_retinol.str
+parameters          toppar/toppar_all36_na_nad_ppi.str
+parameters          toppar/toppar_all36_na_rna_modified.str
+parameters          toppar/toppar_all36_lipid_bacterial.str
+parameters          toppar/toppar_all36_lipid_cardiolipin.str
+parameters          toppar/toppar_all36_lipid_cholesterol.str
+parameters          toppar/toppar_all36_lipid_inositol.str
+parameters          toppar/toppar_all36_lipid_lps.str
+parameters          toppar/toppar_all36_lipid_miscellaneous.str
+parameters          toppar/toppar_all36_lipid_model.str
+parameters          toppar/toppar_all36_lipid_prot.str
+parameters          toppar/toppar_all36_lipid_pyrophosphate.str
+parameters          toppar/toppar_all36_lipid_sphingo.str
+parameters          toppar/toppar_all36_lipid_yeast.str
+parameters          toppar/toppar_all36_lipid_hmmm.str
+parameters          toppar/toppar_all36_lipid_detergent.str
+parameters          toppar/toppar_all36_carb_glycolipid.str
+parameters          toppar/toppar_all36_carb_glycopeptide.str
+parameters          toppar/toppar_all36_carb_imlab.str
+
+#Force field modifications
+exclude scaled1-4
+1-4scaling 1.0
+dielectric 1.0
+gbis                on
+switching           on
+VDWForceSwitching   on
+alphacutoff         14.
+switchdist          15.
+cutoff              16.
+pairlistdist        17.
+ionconcentration    0.1
+solventDielectric   80.0
+sasa                on
+stepspercycle       20
+margin              2.0
+rigidBonds          ALL
+timestep            2.0
+
+# Integrator Parameters
+nonbondedFreq           1;                  # nonbonded forces every step
+fullElectFrequency      1;                  # PME every step
+
+# Constant Temperature Control ONLY DURING EQUILB
+reassignFreq            500;                # reassignFreq:  use this to reassign velocity every 500 steps
+reassignTemp            $temp;
+
+langevin                on
+langevinDamping         1.0
+langevinTemp            $temp
+langevinHydrogen        off
+
+constraints             on
+consexp                 2
+consref                 ./prot_poscons.pdb
+conskfile               ./prot_poscons.pdb
+conskcol                B
+constraintScaling       %s
+
+%s
+
+%s
+
+%s
+
+%s
+
+%s
+'''
+
+OUTPUTNAME='''
+# 1
+set outputname          %s;
+'''
+
+INPUTNAME='''
+# 2
+set inputname           %s.restart;
+binCoordinates          $inputname.coor;    # coordinates from last run (binary)
+binVelocities           $inputname.vel;     # velocities from last run (binary)
+extendedSystem          $inputname.xsc;     # cell dimensions from last run (binary)
+'''
+PBC='''
+# 3
+####################################
+# Periodic Boundary conditions. Need this since for a start...
+
+#### Read PBC data into configuration file
+#  Slurp up the data file
+set fp [open "./PBC_Values.str" r]
+set file_data [read $fp]
+close $fp
+
+set data [split $file_data "\n"]
+set a [lindex $data 0 0]
+set b [lindex $data 0 1]
+set c [lindex $data 0 2]
+set xcen [lindex $data 1 0]
+set ycen [lindex $data 1 1]
+set zcen [lindex $data 1 2]
+
+cellBasisVector1     $a   0.0   0.0;        # vector to the next image
+cellBasisVector2    0.0    $b   0.0;
+cellBasisVector3    0.0   0.0    $c;
+cellOrigin          $xcen $ycen $zcen;        # the *center* of the cell
+####################################
+'''
+
+COLVAR1='''
+# 4
+colvars on
+cv config "
+colvar {
+    name COORD
+    coordnum {
+        group1 {
+            atomsFile      lig_coord.pdb
+            atomsCol       B
+            atomsColValue  1
+        }
+        group2 {
+            atomsFile      lig_coord.pdb
+            atomsCol       B
+            atomsColValue  2
+        }
+    }
+}
+"
+'''
+MINIMIZE='''
+# 5
+minimize                %s
+'''
+
+
+COLVAR2='''
+# 6
+#Lookup what the current colvar value is.
+run 0
+cv update
+set cvname COORD
+set initvalue [cv colvar $cvname value]
+
+cv config "
+harmonic {
+    name harm
+    colvars $cvname
+    centers $initvalue
+    forceConstant 0.01
+    outputAccumulatedWork on
+    outputCenters on
+}
+"
+reinitvels $temperature
+'''
+
+RUN='''
+# 7
+run                     %s
+'''
+import os
+import glob
+def mymkdir(s):
+	if not os.path.exists(s):
+		os.makedirs(s)
+def mysymlink(source, dest):
+	if not os.path.exists(dest):
+		os.symlink(source, dest)
+def setparam(param,value):
+        return param % value
+
+def makeconf(step):
+        if (step == 1):
+                conf = script % ( setparam(OUTPUTNAME,"step1"),\
+                                  "temperature $temp",\
+                                  "1.0",\
+                                  "#NOPBC",\
+                                  "# ",\
+                                  setparam(MINIMIZE,"10000"),\
+                                  "# ",\
+                                  setparam(RUN,"500000") )
+        elif (step == 2):
+                conf = script % ( setparam(OUTPUTNAME,"step%s" % step),\
+                                  setparam(INPUTNAME,"step%s" % (step - 1)),\
+                                  "1.0",\
+                                  "# ",\
+                                  "# No Colvar1",\
+                                  "# No minimize",\
+                                  "# No COLVAR2",\
+                                  setparam(RUN,"20000000") )
+        else:
+                conf = script % ( setparam(OUTPUTNAME,"step%s" % step),\
+                                  setparam(INPUTNAME,"step%s" % (step - 1)),\
+                                  "0.1",\
+                                  "# ",\
+                                  "# No Colvar1",\
+                                  "# No minimize",\
+                                  "# No COLVAR2",\
+                                  setparam(RUN,"20000000") )
+        return conf
+
+
+def createsys(ligname,sysname):
+        mymkdir("./%s-%s" % (ligname, sysname))
+        os.chdir("./%s-%s" % (ligname, sysname))
+        mysymlink("../../build/%s-ligand-mod/%s_A_aligned_w-ligand.psf" % (ligname, sysname), "my.psf")
+        mysymlink("../../build/%s-ligand-mod/%s_A_aligned_w-ligand.pdb" % (ligname, sysname), "my.pdb")
+        mysymlink("../../build/%s-ligand-mod/%s_A_aligned_w-ligand-consfile.pdb" % (ligname, sysname), "prot_poscons.pdb")
+        mysymlink("../../%s" % "charmm", "toppar")
+        for i in range(1,5):
+                fout = open("step%d.namd" % i, "w")
+                fout.write(makeconf(i))
+                fout.close()
+        os.chdir("../")
+
+for lig in ["4ake-dock-2", "4ake-dock-9"]:
+        for mysys in ["1ake", "4ake"]:
+                createsys(lig,mysys)
