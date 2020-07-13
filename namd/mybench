@@ -1,0 +1,17 @@
+#!/bin/bash
+
+if [ $# -eq 0 ]; then
+    echo "Usage:"
+    echo "mybench namd-log-file [ns-desired]"
+    exit 1
+fi
+
+
+awk ' /Benchmark/ {print $0}' $1
+nsday=$(awk ' /Benchmark/ {sum += $8; n++} END {print n/sum}' $1)
+echo " ";echo "The number of ns/day is: $nsday"
+
+
+if ! [ -z $2 ];then
+    awk -v nsday=$nsday -v time=$2 'BEGIN{nshr = nsday/24;treq = time/nshr;print "ns/hr is:",nshr;print "hrs required",treq;print "days required", time/nsday}'
+fi
